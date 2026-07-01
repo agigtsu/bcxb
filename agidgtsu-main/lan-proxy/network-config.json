@@ -1,1 +1,21 @@
-{}
+{
+  "current_profile": "default",
+  "profiles": {
+    "default": {
+      "mode": "whitelist",
+      "ips": [
+        "127.0.0.1"
+      ]
+    }
+  },
+  "security": {
+    "ip_filtering": "enabled",
+    "whitelist_mode": true
+  },
+  "blocked_response": {
+    "status_code": 403,
+    "message": "Access Forbidden - IP not whitelisted"
+  },
+  "created_date": "2026-06-16T19:07:38Z",
+  "managed_by": "network-protect.sh"
+}

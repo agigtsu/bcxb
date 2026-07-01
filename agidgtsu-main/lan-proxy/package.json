@@ -1,0 +1,42 @@
+{
+  "name": "lan-proxy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test-modern-quantum-safe.js && node test-crypto-capabilities.js",
+    "security:gate": "node security-gate.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "argon2": "^0.31.0",
+    "cookie-parser": "^1.4.7",
+    "csurf": "^1.2.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.19.0",
+    "http-proxy-agent": "^7.0.0",
+    "http-proxy-middleware": "^3.0.0",
+    "https-proxy-agent": "^7.0.0",
+    "nodemailer": "^9.0.1",
+    "pqcrypto": "^1.0.0",
+    "selfsigned": "^5.5.0",
+    "socks-proxy-agent": "^8.0.5"
+  },
+  "optionalDependencies": {
+    "@tqrsa/kyber": "npm:null@^1.0.0"
+  },
+  "engines": {
+    "node": ">=15.3.0"
+  },
+  "comments": {
+    "liboqs-node": "Post-quantum cryptography: Kyber1024, ML-KEM, ML-DSA",
+    "builtin-crypto": "Node.js crypto: X25519, ChaCha20-Poly1305, AES-256-GCM, HKDF",
+    "engines.node": "HKDF available in Node.js 15.3+"
+  },
+  "overrides": {
+    "cookie": ">=0.7.0"
+  }
+}

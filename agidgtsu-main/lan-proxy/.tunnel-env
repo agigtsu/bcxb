@@ -1,0 +1,40 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════════
+# CLOUDFLARE TUNNEL EGRESS CONFIGURATION
+# Activates tunnel routing for encrypted proxy requests to destination
+# ═══════════════════════════════════════════════════════════════════════════
+
+# 🌐 TUNNEL OPERATIONAL MODE
+# Options: disabled, enabled, cloudflare
+export TUNNEL_MODE="enabled"
+
+# 🔧 TUNNEL GATEWAY
+# For Docker-based deployments, the proxy should reach the host-side gateway at host.docker.internal:8888.
+# You can verify with: ps aux | grep cloudflared
+export TUNNEL_GATEWAY="127.0.0.1:8888"
+
+# 🔐 SOCKS5 PROXY FOR ISP PRIVACY (NEW)
+# When enabled, all FlareSolverr/Chromium requests route through cloudflared SOCKS5 gateway
+# This hides the destination domain from your ISP
+# The SOCKS gateway must be running: cloudflared tunnel --socks 127.0.0.1:8888
+export SOCKS_ENABLED="true"
+export SOCKS_PROXY_URL="socks5://127.0.0.1:8888"
+
+# 📍 CLOUDFLARE TUNNEL TOKEN
+# Your authenticated tunnel token (from cloudflared tunnel run command)
+# Extract from running process: ps aux | grep cloudflared
+# For testing, uncomment and set this if needed:
+# export CLOUDFLARE_TUNNEL_TOKEN="your-token-here"
+
+# ⏱️  TUNNEL REQUEST TIMEOUT
+# Milliseconds to wait for tunnel to respond (adjust for high-latency destinations)
+export TUNNEL_TIMEOUT="30000"
+
+# 🔄 TUNNEL REDIRECT HANDLING
+# Maximum HTTP redirects to follow through tunnel
+export TUNNEL_MAX_REDIRECTS="5"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# USAGE: 
+#   source .tunnel-env && source ~/.proxy-env && node server.js
+# ═══════════════════════════════════════════════════════════════════════════

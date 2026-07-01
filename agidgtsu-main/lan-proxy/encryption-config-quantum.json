@@ -1,0 +1,236 @@
+{
+    "version": "3.0",
+    "name": "modern-quantum-safe-encryption-v2024",
+    "description": "NIST 2024 Quantum-Safe Encryption with Tamper Detection & Key Rotation",
+    "encryptionEngine": "modern-quantum-safe",
+    "threatModelCoverage": {
+        "quantumHarvest": true,
+        "activeTampering": true,
+        "gpuBruteForce": true,
+        "supplyChainAttacks": true,
+        "keyRotation": true,
+        "dependencyFailure": true
+    },
+    "algorithms": {
+        "keyExchange": {
+            "primary": {
+                "name": "kyber1024-hybrid",
+                "standard": "FIPS 203",
+                "category": "Lattice-based KEM",
+                "postQuantum": true,
+                "security": "NIST Level 5 (256-bit equivalent)",
+                "keySize": 3168,
+                "enabled": true,
+                "fallback": "x25519"
+            },
+            "fallback": {
+                "name": "x25519",
+                "standard": "RFC 7748",
+                "category": "Elliptic Curve ECDH",
+                "postQuantum": false,
+                "security": "Classical 128-bit",
+                "keySize": 256,
+                "enabled": true,
+                "fallback": null
+            },
+            "hybrid": {
+                "method": "SHA512(kyber_secret || x25519_secret)",
+                "purpose": "Defense-in-depth: if one breaks, other provides security"
+            }
+        },
+        "signing": {
+            "primary": {
+                "name": "dilithium2",
+                "standard": "FIPS 204",
+                "category": "Lattice-based Signature",
+                "postQuantum": true,
+                "security": "NIST Level 2 (128-bit equivalent)",
+                "keySize": 2320,
+                "purpose": "Non-repudiation + Tamper Detection",
+                "enabled": true,
+                "fallback": "ed25519"
+            },
+            "fallback": {
+                "name": "ed25519",
+                "standard": "RFC 8032",
+                "category": "EdDSA Signature",
+                "postQuantum": false,
+                "security": "Classical 128-bit",
+                "keySize": 256,
+                "purpose": "Always available, fast fallback",
+                "enabled": true,
+                "fallback": null
+            },
+            "verification": {
+                "timing": "FIRST (before decryption)",
+                "failFast": true,
+                "tampering": "Detected immediately"
+            }
+        },
+        "encryption": {
+            "primary": {
+                "name": "aes-256-gcm",
+                "standard": "NIST SP 800-38D",
+                "category": "Symmetric AEAD",
+                "security": "256-bit",
+                "speed": "~0.3-0.5 µs/packet (HW-accelerated)",
+                "enabled": true,
+                "fallback": "xchacha20-poly1305"
+            },
+            "fallback": {
+                "name": "xchacha20-poly1305",
+                "standard": "RFC 8439",
+                "category": "Symmetric AEAD",
+                "security": "256-bit",
+                "speed": "~1-2 µs/packet (software)",
+                "enabled": true,
+                "fallback": null,
+                "reason": "If AES-NI unavailable"
+            },
+            "performance": {
+                "aesGcmSpeedup": "10-100x faster than ChaCha20",
+                "hardwareAccelerated": true
+            }
+        },
+        "keyDerivation": {
+            "primary": {
+                "name": "argon2id",
+                "standard": "RFC 9106",
+                "category": "Memory-hard KDF",
+                "security": "GPU/ASIC-resistant",
+                "parameters": {
+                    "timeCost": 4,
+                    "memoryCost": 65536,
+                    "parallelism": 1,
+                    "unit": "MiB (64MB per derivation)"
+                },
+                "purpose": "Resists brute-force attacks",
+                "enabled": true,
+                "fallback": "hkdf-sha512"
+            },
+            "fallback": {
+                "name": "hkdf-sha512",
+                "standard": "NIST SP 800-56C",
+                "category": "HMAC-based KDF",
+                "security": "Fast but GPU-vulnerable",
+                "enabled": true,
+                "fallback": null,
+                "reason": "If Argon2id unavailable"
+            },
+            "comparison": {
+                "argon2id": "Resistant to GPU/ASIC",
+                "pbkdf2": "Vulnerable to GPU (10,000x weaker)",
+                "hkdf": "No memory hardness"
+            }
+        }
+    },
+    "packetStructure": {
+        "version": 2,
+        "fields": {
+            "keyExchange": {
+                "kyberCiphertext": "Buffer (1088 bytes for Kyber1024)",
+                "x25519PublicKey": "Buffer (32 bytes)"
+            },
+            "encryption": {
+                "algorithm": "aes-256-gcm",
+                "ciphertext": "Encrypted data",
+                "iv": "Buffer (12 bytes - nonce)",
+                "authTag": "Buffer (16 bytes - authentication)"
+            },
+            "keyDerivation": {
+                "salt": "Buffer (16 bytes)",
+                "algorithm": "argon2id"
+            },
+            "signing": {
+                "signature": "Buffer (signature)",
+                "signingAlgorithm": "dilithium2 or ed25519"
+            },
+            "metadata": {
+                "timestamp": "ISO 8601",
+                "fallbackChain": "Array of attempted algorithms"
+            }
+        },
+        "flow": [
+            "1. Verify signature (FIRST - tamper detection)",
+            "2. Kyber decapsulation (recover PQ secret)",
+            "3. X25519 ECDH (recover classical secret)",
+            "4. Combine secrets (SHA512)",
+            "5. Derive key (Argon2id)",
+            "6. Decrypt data (AES-256-GCM)",
+            "7. Verify auth tag (GCM built-in)"
+        ]
+    },
+    "keyManagement": {
+        "storage": {
+            "masterKeyLocation": "aws-secrets-manager",
+            "masterKeyName": "proxy-quantum-safe-master-v2",
+            "backupLocation": "hashicorp-vault",
+            "permissions": "0600 (read-write owner only)"
+        },
+        "rotation": {
+            "interval": "30d-90d",
+            "policy": "Automatic rotation every 30-90 days",
+            "reason": "Prevents harvest-now-decrypt-later attacks",
+            "nextRotation": "{{ computed at runtime }}",
+            "archived": "Last 5 rotations retained for decryption"
+        },
+        "ephemeral": {
+            "x25519": "Per-session (forward secrecy)",
+            "kyber": "Per-session (post-quantum secrecy)"
+        }
+    },
+    "security": {
+        "defense": {
+            "tamperingDetection": "Signature verification (Dilithium2/Ed25519)",
+            "bruteForce": "Argon2id (GPU/ASIC resistant)",
+            "postQuantum": "Kyber1024 (NIST PQC finalist)",
+            "classical": "X25519 ECDH (classical backup)",
+            "compromiseRecovery": "Key rotation every 30-90 days"
+        },
+        "failureMode": {
+            "kyberFailure": "Fall back to X25519",
+            "dilithiumFailure": "Fall back to Ed25519",
+            "aesFailure": "Fall back to XChaCha20-Poly1305",
+            "argon2Failure": "Fall back to HKDF-SHA512",
+            "logLevel": "WARN (all fallbacks logged)"
+        }
+    },
+    "monitoring": {
+        "tracking": {
+            "encrypted": "Count encrypted packets",
+            "decrypted": "Count decrypted packets",
+            "tamperDetected": "COUNT tampering attempts",
+            "fallbacksUsed": "Count algorithm fallbacks",
+            "rotationsPerformed": "Count key rotations"
+        },
+        "alerts": {
+            "tamperDetection": "CRITICAL: Signature verification failed",
+            "fallbackUsage": "WARN: Algorithm fallback triggered",
+            "rotationSchedule": "INFO: Key rotation upcoming",
+            "errorRate": "CRITICAL: Encryption/decryption failure rate >1%"
+        },
+        "compliance": {
+            "standards": [
+                "FIPS 203",
+                "FIPS 204",
+                "NIST SP 800-38D",
+                "RFC 9106",
+                "RFC 8439"
+            ],
+            "auditRequired": true,
+            "logRetention": "90 days"
+        }
+    },
+    "dependencies": {
+        "required": [
+            "crypto (Node.js builtin)",
+            "argon2 (memory-hard KDF)",
+            "liboqs-node (Kyber1024)",
+            "pqcrypto (Dilithium2)"
+        ],
+        "optional": [
+            "@tqrsa/kyber (alternative Kyber)",
+            "aws-sdk (AWS KMS integration)"
+        ]
+    }
+}
