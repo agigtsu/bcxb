@@ -35,6 +35,7 @@
 # Tunnel / SOCKS sessions:
 #  - A tunnel can include multiple edge proxies/socks endpoints in the CSV edges column.
 #    Use SOCKS_SESSION to pick which one to use (acts like a VPN/session selector).
+#  - The chosen SOCKS_SESSION can be persisted across reboots in .active_socks_session
 #
 # Machine emulation:
 #  - Place a machine.json file next to this script (or set MACHINE_JSON=/path/to/machine.json)
@@ -126,12 +127,13 @@ RETRIES="${RETRIES:-3}"
 RETRY_BACKOFF="${RETRY_BACKOFF:-2}"
 
 # Machine json
-MACHINE_JSON_PATH="${MACHINE_JSON:-${SCRIPT_DIR:-}/machine.json}"
+MACHINE_JSON_PATH="${MACHINE_JSON:-}" 
 
 # LAN proxy directory (where tunnels.csv lives)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TUNNELS_CSV="${SCRIPT_DIR}/tunnels.csv"
 ACTIVE_TUNNEL_STATE="${SCRIPT_DIR}/.active_tunnel"
+ACTIVE_SOCKS_STATE="${SCRIPT_DIR}/.active_socks_session"
 
 # Credentials
 PROXY_API_KEY="${PROXY_API_KEY:-sk_live_HvST3CeVckX_EUamWC6rq0HGnSuNy36K4W6Jh-Z75vw}"
@@ -143,6 +145,14 @@ QUERY="${1:-}"
 # If an explicit socks was provided, override the default (positional or env)
 if [[ -n "$EXPLICIT_SOCKS" ]]; then
     SOCKS_GATEWAY="$EXPLICIT_SOCKS"
+fi
+
+# If SOCKS_SESSION not provided, try loading persisted session
+if [[ -z "$SOCKS_SESSION" && -f "$ACTIVE_SOCKS_STATE" ]]; then
+    SOCKS_SESSION=$(cat "$ACTIVE_SOCKS_STATE" 2>/dev/null || true)
+    if [[ -n "$SOCKS_SESSION" ]]; then
+        print_info "Loaded persisted SOCKS_SESSION: $SOCKS_SESSION"
+    fi
 fi
 
 # Helper: validate JSON
@@ -298,6 +308,12 @@ step_2_verify_tunnel() {
         if [[ -n "$CHOSEN_SOCKS" ]]; then
             SOCKS_GATEWAY="$CHOSEN_SOCKS"
             print_info "Selected SOCKS from tunnel edges (session $SOCKS_SESSION): $SOCKS_GATEWAY"
+            # Persist choice so it survives reboots
+            if ! echo "$SOCKS_SESSION" > "$ACTIVE_SOCKS_STATE"; then
+                print_error "Failed to persist SOCKS_SESSION to $ACTIVE_SOCKS_STATE"
+            else
+                print_info "Persisted SOCKS_SESSION=$SOCKS_SESSION to $ACTIVE_SOCKS_STATE"
+            fi
         else
             print_error "Could not select SOCKS session $SOCKS_SESSION from tunnel edges"
             # fallback to default behavior (explicit socks or global default)
@@ -466,9 +482,9 @@ step_6_flaresolverr_process() {
     print_success "FlareSolverr processed request"
 }
 
-# ──────────────────────────────────────────────────────────────────[...]
+# ─────────────────────────────────────────────────���────────────────[...]
 # STEP 7: ROUTE VIA TUNNEL (SOCKS5)
-# ────────���─────────────────────────────────────────────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 
 step_7_route_via_tunnel() {
     print_section "STEP 7: Route via Tunnel (SOCKS5)"
@@ -522,7 +538,7 @@ step_8_display_results() {
     print_success "Request completed successfully"
 }
 
-# ───────────────────────────────────────��──────────────────────────[...]
+# ───────────────────────────────────────��─────────────────────────[...]
 # MAIN EXECUTION FLOW
 # ──────────────────────────────────────────────────────────────────[...]
 
