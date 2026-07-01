@@ -1,7 +1,0 @@
-tunnel: zero-trust-proxy
-credentials-file: /Users/rcsp2/.cloudflared/zero-trust-proxy.json
-
-ingress:
-  - hostname: localhost
-    service: http://localhost:8788
-  - service: http_status:404

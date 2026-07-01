@@ -1,4 +1,0 @@
-client_id,device_name,ip_address,allowed_ports,api_key_hash,key_created,status,permissions,tunnel_access,tunnel_id,notes
-1,Localhost,127.0.0.1,"8191",sha256:261a07c1c916d67826b812e15cfcf101a4e9f87d7a998a15b050c15946a4f064,2026-06-17T05:25:44Z,active,user,local_only,,
-2,TestDevice,192.168.1.100,"8000,8001",sha256:9fc582b4b7eb3fca3988498200d80d0fdc9dc4519d0d145efe895f4f6b66e9b0,2026-06-17T05:52:47Z,active,user,local_only,,
-3,Tablet,10.1.4.100,"9000,9001,9002",sha256:b226 59b068658bed7015c36602d3d85520177b1ac495c1e2539fb90bda6fa984,2026-06-17T05:54:30Z,active,user,local_only,,
