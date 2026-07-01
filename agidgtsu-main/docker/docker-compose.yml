@@ -1,0 +1,186 @@
+version: '3.8'
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 1. CLOUDFLARE SOCKS PROXY
+  # ═══════════════════════════════════════════════════════════════════════════
+  cloudflared-socks:
+    build:
+      context: .
+      dockerfile: cloudflared-socks/Dockerfile
+    # FIXED: Remove image tag OR use pull_policy to force build
+    image: cloudflared-socks:latest
+    pull_policy: build                 # ← Force build, never pull
+    container_name: cloudflared-socks
+    environment:
+      CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+      CLOUDFLARE_TUNNEL_NAME: ${CLOUDFLARE_TUNNEL_NAME:-}
+      SOCKS_PORT: "8888"
+      SOCKS_HOST: "0.0.0.0"
+      LOG_LEVEL: info
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./cloudflared-socks/scripts:/app/scripts:rw
+      - cloudflared_config:/app/config:rw
+      - cloudflared_logs:/app/logs:rw
+      - cloudflared_data:/app/data:rw
+      - cloudflared_bin:/app/bin:rw
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8888"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - proxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 2. FLARESOLVERR
+  # ═══════════════════════════════════════════════════════════════════════════
+  flaresolverr:
+    build:
+      context: ../flaresolverr
+      dockerfile: Dockerfile
+    image: flaresolverr:latest
+    pull_policy: build                 # ← Force build
+    container_name: flaresolverr
+    depends_on:
+      cloudflared-socks:
+        condition: service_healthy
+    environment:
+      PROXY_SERVER: socks5://cloudflared-socks:8888
+      PROXY_TYPE: socks5
+      LOG_LEVEL: info
+      HEADLESS: "true"
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - proxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 3. LAN PROXY
+  # ═══════════════════════════════════════════════════════════════════════════
+  lan-proxy:
+    build:
+      context: ..
+      dockerfile: docker/lan-proxy/Dockerfile
+    image: lan-proxy:latest
+    pull_policy: build                 # ← Force build
+    container_name: lan-proxy
+    depends_on:
+      flaresolverr:
+        condition: service_healthy
+      cloudflared-socks:
+        condition: service_healthy
+    environment:
+      FLARESOLVERR_URL: http://flaresolverr:8191
+      SOCKS_PROXY_URL: socks5://cloudflared-socks:8888
+      SOCKS_ENABLED: "true"
+      PROXY_PORT: "8789"
+      PROXY_API_KEY: ${PROXY_API_KEY:-sk_live_HvST3CeVckX_EUamWC6rq0HGnSuNy36K4W6Jh-Z75vw}
+      TLS_CERT_PATH: /app/certs/server.crt
+      TLS_KEY_PATH: /app/certs/server.key
+      LOG_LEVEL: info
+    ports:
+      - "8789:8789"
+    volumes:
+      - lan_proxy_certs:/app/certs:rw
+      - lan_proxy_logs:/app/logs:rw
+      - lan_proxy_audit:/app/audit-logs:rw
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-sf", "https://localhost:8789/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - proxy-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 4. TUNNEL CAPTURE (optional)
+  # ═══════════════════════════════════════════════════════════════════════════
+  tunnel-capture:
+    build:
+      context: ./tunnel-capture
+      dockerfile: Dockerfile
+    image: tunnel-capture:latest
+    pull_policy: build                 # ← Force build
+    container_name: tunnel-capture
+    depends_on:
+      cloudflared-socks:
+        condition: service_healthy
+    networks:
+      - proxy-network
+    restart: unless-stopped
+    volumes:
+      - tunnel_capture_data:/app/cloudflare-tunnel:rw
+      - tunnel_capture_logs:/var/log/tunnel-capture:rw
+    environment:
+      CSV_PATH: /app/cloudflare-tunnel/tunnels.csv
+      CAPTURE_DURATION: "20"
+      CAPTURE_INTERVAL: "120"
+      TCPDUMP_FILTER: "tcp port 443 or udp port 7844"
+      LOG_LEVEL: info
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# NETWORKS
+# ═══════════════════════════════════════════════════════════════════════════
+networks:
+  proxy-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════════════════════════════════════
+volumes:
+  lan_proxy_certs:
+    driver: local
+  lan_proxy_logs:
+    driver: local
+  lan_proxy_audit:
+    driver: local
+  cloudflared_config:
+    driver: local
+  cloudflared_logs:
+    driver: local
+  cloudflared_data:
+    driver: local
+  cloudflared_bin:
+    driver: local
+  tunnel_capture_data:
+    driver: local
+  tunnel_capture_logs:
+    driver: local

@@ -1,0 +1,6 @@
+port,protocol,destination_ip,destination_port,status,description
+993,tcp,127.0.0.1,993,open,IMAP SSL forwarding (test port)
+465,tcp,127.0.0.1,465,closed,SMTP SSL forwarding
+8789,tcp,127.0.0.1,8789,open,LAN Proxy
+8191,tcp,127.0.0.1,8191,open,FlareSolverr
+22,tcp,excluded,22,excluded,SSH access (blacklisted)

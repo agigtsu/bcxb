@@ -1,0 +1,3 @@
+export PROXY_API_KEY="sk_live_HvST3CeVckX_EUamWC6rq0HGnSuNy36K4W6Jh-Z75vw"
+export PROXY_HMAC_SECRET="2gkEK3G0AUApbRLx9Gpo73OyNWmGh8ULzv7rXZ9n/QxUqWz7ZD7uBnEkqZt0yfkUl1r9RVkvFWDUQNUTM2Q0Ag=="
+export PROXY_SECRET="m7-local-dev-secret-2026"
