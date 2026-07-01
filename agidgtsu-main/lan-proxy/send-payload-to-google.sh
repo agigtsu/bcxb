@@ -37,6 +37,10 @@
 #    Use SOCKS_SESSION to pick which one to use (acts like a VPN/session selector).
 #  - The chosen SOCKS_SESSION can be persisted across reboots in .active_socks_session
 #
+# Interactive first-run:
+#  - On first run (no .interactive_config), an interactive menu will prompt to pick a tunnel
+#    and socks session. Choices can be persisted for future runs.
+#
 # Machine emulation:
 #  - Place a machine.json file next to this script (or set MACHINE_JSON=/path/to/machine.json)
 #    and the file will be attached to the envelope under the "flaresolverr.machine_profile" key.
@@ -127,13 +131,14 @@ RETRIES="${RETRIES:-3}"
 RETRY_BACKOFF="${RETRY_BACKOFF:-2}"
 
 # Machine json
-MACHINE_JSON_PATH="${MACHINE_JSON:-}" 
+MACHINE_JSON_PATH="${MACHINE_JSON:-}"
 
 # LAN proxy directory (where tunnels.csv lives)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TUNNELS_CSV="${SCRIPT_DIR}/tunnels.csv"
 ACTIVE_TUNNEL_STATE="${SCRIPT_DIR}/.active_tunnel"
 ACTIVE_SOCKS_STATE="${SCRIPT_DIR}/.active_socks_session"
+INTERACTIVE_STATE="${SCRIPT_DIR}/.interactive_config"
 
 # Credentials
 PROXY_API_KEY="${PROXY_API_KEY:-sk_live_HvST3CeVckX_EUamWC6rq0HGnSuNy36K4W6Jh-Z75vw}"
@@ -190,6 +195,122 @@ _pick_socks_from_edges() {
         echo "${arr[$sel_index]}"
     else
         echo ""
+    fi
+}
+
+# Interactive first-run setup: select tunnel and socks session
+interactive_setup() {
+    # Skip interactive if user provided explicit overrides
+    if [[ -n "$EXPLICIT_TUNNEL" || -n "$EXPLICIT_SOCKS" ]]; then
+        return
+    fi
+
+    # If interactive already configured, skip
+    if [[ -f "$INTERACTIVE_STATE" ]]; then
+        return
+    fi
+
+    # Only run interactively when attached to a TTY
+    if [[ ! -t 1 ]]; then
+        return
+    fi
+
+    if [[ ! -f "$TUNNELS_CSV" ]]; then
+        return
+    fi
+
+    echo ""
+    echo -e "${BOLD}Interactive setup: choose a tunnel and SOCKS session (first-run friendly)${NC}"
+
+    # Read tunnels into arrays
+    mapfile -t TUNNEL_LINES < <(tail -n +2 "$TUNNELS_CSV" | sed '/^\s*$/d')
+    if [[ ${#TUNNEL_LINES[@]} -eq 0 ]]; then
+        print_error "No tunnels found in $TUNNELS_CSV"
+        return
+    fi
+
+    echo "Available tunnels:"
+    local idx=1
+    declare -a _IDS
+    for line in "${TUNNEL_LINES[@]}"; do
+        id=$(echo "$line" | awk -F',' '{print $1}' | tr -d '[:space:]')
+        name=$(echo "$line" | awk -F',' '{print $2}' | xargs)
+        echo "  $idx) $id - $name"
+        _IDS[$idx]="$id"
+        idx=$((idx+1))
+    done
+
+    read -r -p "Enter tunnel number to use (default 1, or 'q' to skip): " sel
+    if [[ "$sel" == "q" || "$sel" == "Q" || -z "$sel" ]]; then
+        if [[ -z "$sel" ]]; then
+            sel=1
+        else
+            echo "Skipping interactive setup."
+            return
+        fi
+    fi
+
+    if ! [[ "$sel" =~ ^[0-9]+$ ]] || [[ $sel -lt 1 || $sel -ge $idx ]]; then
+        print_error "Invalid selection, aborting interactive setup"
+        return
+    fi
+
+    ACTIVE_TUNNEL="${_IDS[$sel]}"
+    echo "Selected tunnel: $ACTIVE_TUNNEL"
+
+    # Extract edges for selected tunnel
+    TUNNEL_EDGES_RAW=$(awk -F',' -v id="$ACTIVE_TUNNEL" 'NR>1 && $1==id {print $7; exit}' "$TUNNELS_CSV")
+    if [[ -z "$TUNNEL_EDGES_RAW" ]]; then
+        print_info "No edges found for selected tunnel"
+        return
+    fi
+
+    # Parse edges and present socks options
+    read -r -a socks_arr <<< "$( _parse_edges "$TUNNEL_EDGES_RAW" )"
+    if [[ ${#socks_arr[@]} -eq 0 ]]; then
+        print_info "No socks endpoints found for selected tunnel"
+        return
+    fi
+
+    echo "Available SOCKS endpoints for $ACTIVE_TUNNEL:"
+    for i in "${!socks_arr[@]}"; do
+        echo "  $((i+1))) ${socks_arr[$i]}"
+    done
+
+    read -r -p "Enter socks session number to use (default 1): " socks_sel
+    if [[ -z "$socks_sel" ]]; then
+        socks_sel=1
+    fi
+    if ! [[ "$socks_sel" =~ ^[0-9]+$ ]] || [[ $socks_sel -lt 1 || $socks_sel -gt ${#socks_arr[@]} ]]; then
+        print_error "Invalid socks selection, defaulting to 1"
+        socks_sel=1
+    fi
+
+    SOCKS_SESSION="$socks_sel"
+    SOCKS_GATEWAY="${socks_arr[$((socks_sel-1))]}"
+    echo "Selected SOCKS: $SOCKS_GATEWAY (session $SOCKS_SESSION)"
+
+    read -r -p "Persist these choices for future runs? (Y/n): " persist
+    persist=${persist:-Y}
+    if [[ "$persist" =~ ^([yY]|[yY][eE][sS])$ ]]; then
+        if ! echo "$ACTIVE_TUNNEL" > "$ACTIVE_TUNNEL_STATE"; then
+            print_error "Failed to persist ACTIVE_TUNNEL to $ACTIVE_TUNNEL_STATE"
+        else
+            print_info "Persisted ACTIVE_TUNNEL=$ACTIVE_TUNNEL to $ACTIVE_TUNNEL_STATE"
+        fi
+        if ! echo "$SOCKS_SESSION" > "$ACTIVE_SOCKS_STATE"; then
+            print_error "Failed to persist SOCKS_SESSION to $ACTIVE_SOCKS_STATE"
+        else
+            print_info "Persisted SOCKS_SESSION=$SOCKS_SESSION to $ACTIVE_SOCKS_STATE"
+        fi
+        # mark interactive completed
+        if ! touch "$INTERACTIVE_STATE"; then
+            print_error "Failed to write interactive marker $INTERACTIVE_STATE"
+        else
+            print_info "Interactive setup completed."
+        fi
+    else
+        print_info "Choices not persisted; they will be used for this run only."
     fi
 }
 
@@ -482,7 +603,7 @@ step_6_flaresolverr_process() {
     print_success "FlareSolverr processed request"
 }
 
-# ─────────────────────────────────────────────────���────────────────[...]
+# ──────────────────────────────────────────────────────────────────[...]
 # STEP 7: ROUTE VIA TUNNEL (SOCKS5)
 # ──────────────────────────────────────────────────────────────────[...]
 
@@ -544,6 +665,9 @@ step_8_display_results() {
 
 main() {
     print_header
+
+    # Interactive first-run setup (may persist choices)
+    interactive_setup
 
     step_1_create_envelope
     step_2_verify_tunnel
